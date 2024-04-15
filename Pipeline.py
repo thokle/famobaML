@@ -1,24 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Apr  8 22:36:36 2024
+Created on Sun Apr 14 16:42:03 2024
 
 @author: hp
 """
+
+import sys
 import pandas as pd
 from py2neo import Graph
 from graphdatascience import GraphDataScience
 
 """ Establish connection to the remote Neo4j database """
 uri = "neo4j://65.108.80.255:7687"
-
 graph = Graph(uri)
 gds = GraphDataScience(uri)
 
 """ Create the pipeline """
 # Create Link Prediction Pipeline (driver)
+pipe_name = 'pipe2'
+pipeline_exists = gds.pipeline.exists('pipe2')[2]
+if pipeline_exists:
+    # gds.pipeline.drop(pipe_name)
+    gds.pipeline.drop(pipe_name)
 pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
 
-# Add Fast RP Embeddings (driver)
 pipe.addNodeProperty("fastRP",
                      mutateProperty="embedding",
                      embeddingDimension=256,
@@ -43,8 +48,10 @@ relationship_projection = {
     "UserMatches": {"orientation": "UNDIRECTED"}
 }
 # drop any existing graph with the same name before creating a new one
+graph_name = "famoba"
 try:
-    G.drop()
+    if gds.graph.exists(graph_name)[1]:
+        gds.graph.drop(graph_name)
 except Exception:
     pass
 
@@ -54,18 +61,22 @@ the specified node and relationship projections. The projected graph is assigned
 and since we're not using the relationship types returned by gds.graph.project(), 
 we ignore the second return value with _.
 '''
-G, _ = gds.graph.project("famoba", node_projection, relationship_projection)
+G, _ = gds.graph.project(graph_name, node_projection, relationship_projection)
 
 # Train link prediction model (driver)
 pipe.addLogisticRegression()
 model_name = "Famoba-pipeline-model"
+
+if gds.model.exists(model_name)[2]:
+    gds.model.drop(model_name)
+
 trained_pipe_model, res = pipe.train(G, targetRelationshipType="UserIsInGroup", modelName=model_name)
 
 # Stream Results (driver)
 results = trained_pipe_model.predict_stream(G, topN=1000)
 results_df = pd.DataFrame(results)
 
-mo
+
 def get_id_prediction(user_id='', group_id='', result=results_df):
     ''' Predicts if a user is in a group using user Id and group Id. '''
     if user_id and group_id:
@@ -98,12 +109,12 @@ def get_id_prediction(user_id='', group_id='', result=results_df):
         print("User node ID attribute missing")
 
 
-def get_username_prediction(user_name='', group_name='', result=results_df):
+def get_username_prediction(user_email='', group_name='', result=results_df):
     '''
         Predicts probability of user being in a group using the username and group name.
     '''
-    if user_name and group_name:
-        query1 = f""" Match (n:User {{ _firstName: '{user_name}'}}) 
+    if user_email and group_name:
+        query1 = f""" Match (n:User {{ _email: '{user_email}'}}) 
             RETURN id(n)
             """
         query2 = f""" Match (n:Groups {{ name: '{group_name}'}}) 
@@ -119,8 +130,8 @@ def get_username_prediction(user_name='', group_name='', result=results_df):
             table = final_table.reset_index(drop=True)
             return table
 
-    elif user_name:
-        query = f""" Match (n:User {{ _firstName: '{user_name}'}}) 
+    elif user_email and (not group_name):
+        query = f""" Match (n:User {{ _email: '{user_email}'}}) 
             RETURN id(n)
             """
         Node1 = graph.run(query).to_series()
@@ -132,7 +143,7 @@ def get_username_prediction(user_name='', group_name='', result=results_df):
             table = final_table.reset_index(drop=True)
             return table
 
-    elif group_name:
+    elif (not user_email) and group_name:
         query = f""" Match (n:Groups {{ name: '{group_name}'}}) 
             RETURN id(n) 
             """
@@ -145,8 +156,18 @@ def get_username_prediction(user_name='', group_name='', result=results_df):
             table = final_table.reset_index(drop=True)
             return table
     else:
-        print("User name attribute missing")
+        print("User attribute missing")
 
 
-### Close the database connection.
-gds.close()
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("""
+              Please provide user_email and group_name as shown below:\n\t
+              Usage: python3 pipeline.py <user_email> <group_name>
+              """)
+    else:
+        email = sys.argv[1]
+        group = sys.argv[2]
+        get_username_prediction(email, group)
+    ### Close the database connection.
+    gds.close()
