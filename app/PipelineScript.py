@@ -18,27 +18,27 @@ gds = GraphDataScience(uri)
 """ Create the pipeline """
 # Create Link Prediction Pipeline (driver)
 pipe_name = 'pipe2'
-pipeline_exists = gds.pipeline.exists('pipe2')[2]
+pipeline_exists = gds.pipeline.exists('pipe2')[se]
+print(pipeline_exists)
 if pipeline_exists:
-    # gds.pipeline.drop(pipe_name)
-    gds.pipeline.drop(pipe_name)
-pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
+    gds.pipeline.drop(gds.pipeline.exists('pipe2')[1])
+    pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
 
-pipe.addNodeProperty("fastRP",
-                     mutateProperty="embedding",
-                     embeddingDimension=256,
-                     iterationWeights=[0.8, 1, 1, 1],
-                     normalizationStrength=0.5,
-                     randomSeed=42)
+    pipe.addNodeProperty("fastRP",
+                         mutateProperty="embedding",
+                         embeddingDimension=256,
+                         iterationWeights=[0.8, 1, 1, 1],
+                         normalizationStrength=0.5,
+                         randomSeed=42)
 
-for algo in ['pageRank', 'betweenness']:
-    pipe.addNodeProperty(algo, mutateProperty=algo)
+    for algo in ['pageRank', 'betweenness']:
+        pipe.addNodeProperty(algo, mutateProperty=algo)
 
-# Add features to pipeline (driver)
-pipe.addFeature("hadamard", nodeProperties=['embedding', 'pageRank', 'betweenness'])
+    # Add features to pipeline (driver)
+    pipe.addFeature("hadamard", nodeProperties=['embedding', 'pageRank', 'betweenness'])
 
-# Split Train/Test (driver)
-pipe.configureSplit(trainFraction=0.3, testFraction=0.3, validationFolds=7)
+    # Split Train/Test (driver)
+    pipe.configureSplit(trainFraction=0.3, testFraction=0.3, validationFolds=7)
 
 # Create graph projection (driver)
 node_projection = ["User", "Child", "Groups"]
