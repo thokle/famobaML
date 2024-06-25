@@ -1,9 +1,9 @@
-import pandas as pd
-from py2neo import Graph
-from graphdatascience import GraphDataScience
-
 # -*- coding: utf-8 -*-
+"""
+Created on Sun Apr 14 16:42:03 2024
 
+@author: hp
+"""
 
 import sys
 import pandas as pd
@@ -11,7 +11,7 @@ from py2neo import Graph
 from graphdatascience import GraphDataScience
 
 
-class PipelineClass(object):
+class Pipe(object):
     def __init__(self, uri="neo4j://65.108.80.255:7687", graph_name='famoba', pipe_name='pipe2'):
         """ Establish connection to the remote Neo4j database """
         self.uri = uri
@@ -29,8 +29,10 @@ class PipelineClass(object):
         # Create Link Prediction Pipeline (driver)
         pipeline_exists = self.gds.pipeline.exists('pipe2')[2]
         if pipeline_exists:
-            # gds.pipeline.drop(pipe_name)
-            self.gds.pipeline.drop(self.pipe_name)
+            pipe = self.gds.pipeline.get('pipe2')
+
+            self.gds.beta.pipeline.drop(pipe)
+
         self.pipe, _ = self.gds.beta.pipeline.linkPrediction.create(self.pipe_name)
 
         self.pipe.addNodeProperty("fastRP",
@@ -76,7 +78,8 @@ class PipelineClass(object):
         model_name = "Famoba-pipeline-model"
 
         if self.gds.model.exists(model_name)[2]:
-            self.gds.model.drop(model_name)
+            model = self.gds.model.get(model_name)
+            self.gds.model.drop(model)
 
         self.model, res = self.pipe.train(self.G, targetRelationshipType="UserIsInGroup", modelName=model_name)
 
@@ -171,22 +174,9 @@ class PipelineClass(object):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("""
-              Please provide user_email and group_name as shown below:\n\t
-              Usage: python3 pipeline.py <user_email> <group_name>
-              """)
-    else:
-        email = sys.argv[1]
-        group = sys.argv[2]
-        famoba_pipe = Pipe()
-        famoba_pipe.create_pipeline()
-        famoba_pipe.create_model()
-        famoba_pipe.get_username_prediction(email, group)
-        ### Close the database connection.
-        famoba_pipe.close_connection()
-
-
-
-
-
+    famoba_pipe = Pipe()
+    famoba_pipe.create_pipeline()
+    famoba_pipe.create_model()
+    # famoba_pipe.get_username_prediction(email, group)
+    ### Close the database connection.
+    famoba_pipe.close_connection()

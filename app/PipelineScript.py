@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Apr 14 16:42:03 2024
+Created on Mon Apr  8 22:36:36 2024
 
 @author: hp
 """
-
 import sys
 import pandas as pd
 from py2neo import Graph
@@ -12,46 +11,42 @@ from graphdatascience import GraphDataScience
 
 """ Establish connection to the remote Neo4j database """
 uri = "neo4j://65.108.80.255:7687"
+
 graph = Graph(uri)
 gds = GraphDataScience(uri)
 
 """ Create the pipeline """
 # Create Link Prediction Pipeline (driver)
-pipe_name = 'pipe2'
-pipeline_exists = gds.pipeline.exists('pipe2')[se]
-print(pipeline_exists)
-if pipeline_exists:
-    gds.pipeline.drop(gds.pipeline.exists('pipe2')[1])
-    pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
+pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
 
-    pipe.addNodeProperty("fastRP",
-                         mutateProperty="embedding",
-                         embeddingDimension=256,
-                         iterationWeights=[0.8, 1, 1, 1],
-                         normalizationStrength=0.5,
-                         randomSeed=42)
+# Add Fast RP Embeddings (driver)
+pipe.addNodeProperty("fastRP",
+                     mutateProperty="embedding",
+                     embeddingDimension=256,
+                     iterationWeights=[0.8, 1, 1, 1],
+                     normalizationStrength=0.5,
+                     randomSeed=42)
 
-    for algo in ['pageRank', 'betweenness']:
-        pipe.addNodeProperty(algo, mutateProperty=algo)
+for algo in ['pageRank', 'betweenness']:
+    pipe.addNodeProperty(algo, mutateProperty=algo)
 
-    # Add features to pipeline (driver)
-    pipe.addFeature("hadamard", nodeProperties=['embedding', 'pageRank', 'betweenness'])
+# Add features to pipeline (driver)
+pipe.addFeature("hadamard", nodeProperties=['embedding', 'pageRank', 'betweenness'])
 
-    # Split Train/Test (driver)
-    pipe.configureSplit(trainFraction=0.3, testFraction=0.3, validationFolds=7)
+# Split Train/Test (driver)
+pipe.configureSplit(trainFraction=0.3, testFraction=0.3, validationFolds=7)
 
 # Create graph projection (driver)
-node_projection = ["User", "Child", "Groups"]
+node_projection = ["User", "Child", "Groups", "Tags"]
 relationship_projection = {
     "UserIsInGroup": {"orientation": "UNDIRECTED"},
     "ChildBelongToParent": {"orientation": "UNDIRECTED"},
-    "UserMatches": {"orientation": "UNDIRECTED"}
+    "UserMatches": {"orientation": "UNDIRECTED"},
+    "user_has_tags": {"orientation": "UNDIRECTED"}
 }
 # drop any existing graph with the same name before creating a new one
-graph_name = "famoba"
 try:
-    if gds.graph.exists(graph_name)[1]:
-        gds.graph.drop(graph_name)
+    G.drop()
 except Exception:
     pass
 
@@ -61,15 +56,11 @@ the specified node and relationship projections. The projected graph is assigned
 and since we're not using the relationship types returned by gds.graph.project(), 
 we ignore the second return value with _.
 '''
-G, _ = gds.graph.project(graph_name, node_projection, relationship_projection)
+G, _ = gds.graph.project("famoba", node_projection, relationship_projection)
 
 # Train link prediction model (driver)
 pipe.addLogisticRegression()
 model_name = "Famoba-pipeline-model"
-
-if gds.model.exists(model_name)[2]:
-    gds.model.drop(model_name)
-
 trained_pipe_model, res = pipe.train(G, targetRelationshipType="UserIsInGroup", modelName=model_name)
 
 # Stream Results (driver)

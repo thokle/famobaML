@@ -1,19 +1,18 @@
-FROM python:3.9-slim
+#
+FROM python:3.9
 
-# Set the working directory inside the container
-WORKDIR /app
+#
+WORKDIR /code
 
-# Copy the requirements.txt file into the container
-COPY requirements.txt .
+#
+COPY ./requirements.txt /code/requirements.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+#
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-# Copy the rest of your application code into the container
-COPY . .
+#
+COPY ./app /code/app
 
-# Expose port 80 (or the port your FastAPI app is running on)
 EXPOSE 80
-
-# Command to run your FastAPI application
-CMD ["uvicorn", "main:app",  "--port", "80"]
+#
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]

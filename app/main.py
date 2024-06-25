@@ -1,15 +1,20 @@
+import json
+from fastapi import FastAPI, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from app.Recommandations import Neo4jRecommendationSystem
+from app.Pipeline import Pipe
 
-from fastapi import FastAPI
-
-import PipelineClass
-import Recommandations
 app = FastAPI()
 uri = "neo4j://65.108.80.255:7687"
 
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
-
+def set_default(obj):
+    if isinstance(obj, set):
+        return list(obj)
+    raise TypeError
 
 @app.get("/hello/{name}")
 async def say_hello(name: str):
@@ -18,18 +23,21 @@ async def say_hello(name: str):
 
 @app.get("/recommandation/{useremail}")
 async def prediect(useremail):
-
-    s =  Recommandations.Neo4jRecommendationSystem(uri)
+    s = Neo4jRecommendationSystem(uri)
+    headers = {'Content-Type': 'application/json', 'cache-control': 'no-cache',}
     s.establish_connection()
-    return s.get_recommendation(useremail)
+    res = s.get_recommendation(useremail)
+    return Response(json.dumps(res, default=set_default), headers=headers)
 
 
 @app.get("/start")
-async def start():
-    s = PipelineClass.PipelineClass()
+def start():
+    s = Pipe()
     s.create_pipeline()
+    s.create_model()
+
 
 @app.get("/prediect/{email}/{groupname")
 async def prediect(email: str, groupname: str):
-    s = PipelineClass.PipelineClass()
+    s = Pipe()
     s.get_username_prediction(email, groupname)

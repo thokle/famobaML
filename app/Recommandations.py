@@ -4,6 +4,7 @@ Created on Fri Apr 19 18:37:54 2024
 
 @author: hp
 """
+import json
 
 import pandas as pd
 from py2neo import Graph
@@ -19,11 +20,12 @@ class Neo4jRecommendationSystem:
     def establish_connection(self):
         try:
             graph_name = "famoba"
-            node_projection = ["User", "Child", "Groups"]
+            node_projection = ["User", "Child", "Groups","Tags"]
             relationship_projection = {
                 "UserIsInGroup": {"orientation": "UNDIRECTED"},
                 "ChildBelongToParent": {"orientation": "UNDIRECTED"},
-                "UserMatches": {"orientation": "UNDIRECTED"}
+                "UserMatches": {"orientation": "UNDIRECTED"},
+                "user_has_tags": {"orientation": "UNDIRECTED"}
             }
 
             if self.gds.graph.exists(graph_name)[1]:
@@ -53,7 +55,7 @@ class Neo4jRecommendationSystem:
                                   WITH collect(g1) AS groups
                                   MATCH (:User {{_firstName: '{similar_user}'}})-->(g2:Groups)
                                   WHERE NOT g2 IN groups
-                                  RETURN DISTINCT g2.name AS Recommended_Group"""
+                                  RETURN DISTINCT g2 AS Recommended_Group"""
             recommendation = set(self.graph.run(recommend_query).to_series(dtype='object'))
             return recommendation
         except Exception as e:
@@ -83,7 +85,7 @@ class Neo4jRecommendationSystem:
         try:
             username = self.get_username(email)
             similar_users = self.get_similarities(username)
-            recommended_groups = set()
+            recommended_groups = set()                  
             for similar_user in similar_users:
                 recommendation = self.recommender(username, similar_user)
                 recommended_groups.update(recommendation)
