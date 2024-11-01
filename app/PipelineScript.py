@@ -59,7 +59,7 @@ we ignore the second return value with _.
 G, _ = gds.graph.project("famoba", node_projection, relationship_projection)
 
 # Train link prediction model (driver)
-pipe.addLogisticRegression()
+pipe.   addLogisticRegression()
 model_name = "Famoba-pipeline-model"
 trained_pipe_model, res = pipe.train(G, targetRelationshipType="UserIsInGroup", modelName=model_name)
 
@@ -105,7 +105,7 @@ def get_username_prediction(user_email='', group_name='', result=results_df):
         Predicts probability of user being in a group using the username and group name.
     '''
     if user_email and group_name:
-        query1 = f""" Match (n:User {{ _email: '{user_email}'}}) 
+        query1 = f""" Match (n:User {{ email: '{user_email}'}}) 
             RETURN id(n)
             """
         query2 = f""" Match (n:Groups {{ name: '{group_name}'}}) 

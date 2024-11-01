@@ -6,7 +6,7 @@ from app.Recommandations import Neo4jRecommendationSystem
 from app.Pipeline import Pipe
 
 app = FastAPI()
-uri = "neo4j://65.108.80.255:7687"
+uri = "bolt://65.108.80.255:7687"
 
 @app.get("/")
 async def root():
@@ -23,7 +23,7 @@ async def say_hello(name: str):
 
 @app.get("/recommandation/{useremail}")
 async def prediect(useremail):
-    s = Neo4jRecommendationSystem(uri)
+    s = Neo4jRecommendationSystem(uri, "neo4j", "famoba2024")
     headers = {'Content-Type': 'application/json', 'cache-control': 'no-cache',}
     s.establish_connection()
     res = s.get_recommendation(useremail)
