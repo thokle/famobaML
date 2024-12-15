@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Apr  8 22:36:36 2024
+Created on Sun Apr 14 16:42:03 2024
 
 @author: Thomas Kleist
 """
+
 import sys
 import pandas as pd
 from py2neo import Graph
@@ -11,15 +12,18 @@ from graphdatascience import GraphDataScience
 
 """ Establish connection to the remote Neo4j database """
 uri = "neo4j://65.108.80.255:7687"
-
 graph = Graph(uri)
 gds = GraphDataScience(uri)
 
 """ Create the pipeline """
 # Create Link Prediction Pipeline (driver)
+pipe_name = 'pipe2'
+pipeline_exists = gds.pipeline.exists('pipe2')[2]
+if pipeline_exists:
+    # gds.pipeline.drop(pipe_name)
+    gds.pipeline.drop(pipe_name)
 pipe, _ = gds.beta.pipeline.linkPrediction.create("pipe2")
 
-# Add Fast RP Embeddings (driver)
 pipe.addNodeProperty("fastRP",
                      mutateProperty="embedding",
                      embeddingDimension=256,
@@ -37,16 +41,17 @@ pipe.addFeature("hadamard", nodeProperties=['embedding', 'pageRank', 'betweennes
 pipe.configureSplit(trainFraction=0.3, testFraction=0.3, validationFolds=7)
 
 # Create graph projection (driver)
-node_projection = ["User", "Child", "Groups", "Tags"]
+node_projection = ["User", "Child", "Groups"]
 relationship_projection = {
     "UserIsInGroup": {"orientation": "UNDIRECTED"},
     "ChildBelongToParent": {"orientation": "UNDIRECTED"},
-    "UserMatches": {"orientation": "UNDIRECTED"},
-    "user_has_tags": {"orientation": "UNDIRECTED"}
+    "UserMatches": {"orientation": "UNDIRECTED"}
 }
 # drop any existing graph with the same name before creating a new one
+graph_name = "famoba"
 try:
-    G.drop()
+    if gds.graph.exists(graph_name)[1]:
+        gds.graph.drop(graph_name)
 except Exception:
     pass
 
@@ -56,11 +61,15 @@ the specified node and relationship projections. The projected graph is assigned
 and since we're not using the relationship types returned by gds.graph.project(), 
 we ignore the second return value with _.
 '''
-G, _ = gds.graph.project("famoba", node_projection, relationship_projection)
+G, _ = gds.graph.project(graph_name, node_projection, relationship_projection)
 
 # Train link prediction model (driver)
-pipe.   addLogisticRegression()
+pipe.addLogisticRegression()
 model_name = "Famoba-pipeline-model"
+
+if gds.model.exists(model_name)[2]:
+    gds.model.drop(model_name)
+
 trained_pipe_model, res = pipe.train(G, targetRelationshipType="UserIsInGroup", modelName=model_name)
 
 # Stream Results (driver)
@@ -105,7 +114,7 @@ def get_username_prediction(user_email='', group_name='', result=results_df):
         Predicts probability of user being in a group using the username and group name.
     '''
     if user_email and group_name:
-        query1 = f""" Match (n:User {{ email: '{user_email}'}}) 
+        query1 = f""" Match (n:User {{ _email: '{user_email}'}}) 
             RETURN id(n)
             """
         query2 = f""" Match (n:Groups {{ name: '{group_name}'}}) 

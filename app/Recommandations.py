@@ -1,163 +1,114 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Apr 19 18:37:54 2024
+
 @author: Thomas Kleist
 """
 import json
-
 import pandas as pd
-from neo4j import GraphDatabase
+from py2neo import Graph
 from graphdatascience import GraphDataScience
-import logging
 
-logging.basicConfig(level=logging.INFO)
 
 class Neo4jRecommendationSystem:
     def __init__(self, uri, username, password):
-        """Initialize connection to the Neo4j database with authentication."""
-        try:
-            self.driver = GraphDatabase.driver(uri, auth=(username, password))
-            self.driver.verify_connectivity()
-            self.gds = GraphDataScience(uri, auth=(username, password))
-            self.result = None
-            logging.info("Neo4j and GDS connections initialized successfully.")
-        except Exception as e:
-            logging.error(f"Error initializing Neo4j connections: {e}")
+        self.graph = Graph(uri, auth=(username, password))
+        self.gds = GraphDataScience(uri, auth=(username, password))
+        self.result = None
 
     def establish_connection(self):
-        """Project the graph and generate similarity scores."""
         try:
-            graph_name = "pipe2"
-            node_projection = ["User", "Child", "Groups", "Tags"]
+            graph_name = "famoba"
+            node_projection = ["User", "Child", "Groups"]
             relationship_projection = {
                 "UserIsInGroup": {"orientation": "UNDIRECTED"},
                 "ChildBelongToParent": {"orientation": "UNDIRECTED"},
-                "UserMatches": {"orientation": "UNDIRECTED"},
-                "userhastags": {"orientation": "UNDIRECTED"},
-                 }
+                "UserMatches": {"orientation": "UNDIRECTED"}
+
+            }
 
             if self.gds.graph.exists(graph_name).iloc[1]:
-                # Drop the existing graph if it exists
                 self.gds.graph.drop(graph_name)
 
-            # Project the graph and create it if it doesn't exist
             self.G, _ = self.gds.graph.project(graph_name, node_projection, relationship_projection)
 
-            self._generate_similarity_scores()
-            logging.info("Graph projection and similarity computation complete.")
+            embed_rule = {'embeddingDimension': 4, 'iterationWeights': [0.8, 1, 1, 1],
+                          'randomSeed': 42, 'mutateProperty': 'embedding'}
+            self.gds.fastRP.mutate(self.G, **embed_rule)
+
+            knn_config = {'nodeProperties': ['embedding'], 'topK': 2, 'sampleRate': 1.0,
+                          'deltaThreshold': 0.0, 'randomSeed': 42, 'concurrency': 1,
+                          'writeProperty': 'score', 'writeRelationshipType': 'SIMILAR'}
+            self.gds.knn.write(self.G, **knn_config)
+
+            similar_query = """ MATCH (n:User)-[r:SIMILAR]->(m:User)  where n.gender = m.gender
+                                RETURN n.firstname AS person1, m.firstname AS person2, r.score AS similarity
+                                ORDER BY similarity DESCENDING, person1, person2 """
+            self.result = self.graph.run(similar_query).to_data_frame()
         except Exception as e:
-            logging.error(f"Error establishing graph connection: {e}")
-
-    def _generate_similarity_scores(self):
-        """Generate similarity scores for users based on embeddings."""
-        embed_rule = {
-            'embeddingDimension': 4,
-            'iterationWeights': [0.8, 1, 1, 1],
-            'randomSeed': 42,
-            'mutateProperty': 'embedding'
-        }
-        self.gds.fastRP.mutate(self.G, **embed_rule)
-
-        knn_config = {
-            'nodeProperties': ['embedding'],
-            'topK': 2,
-            'sampleRate': 1.0,
-            'deltaThreshold': 0.0,
-            'randomSeed': 42,
-            'concurrency': 1,
-            'writeProperty': 'score',
-            'writeRelationshipType': 'SIMILAR'
-        }
-        self.gds.knn.write(self.G, **knn_config)
-
-        similar_query = """
-            MATCH (n:User)-[r:SIMILAR]->(m:User)
-            RETURN n.firstName AS person1, m.firstName AS person2, r.score AS similarity
-            ORDER BY similarity DESCENDING, person1, person2
-        """
-        query_result = self.driver.session().run(similar_query)
-        self.result = pd.DataFrame(query_result.data())
-        logging.info("Similarity scores generated and stored in DataFrame.")
+            print(f"An error occurred while establishing connection: {str(e)}")
 
     def recommender(self, user, similar_user):
-        """Generate group recommendations for a user based on similar user memberships."""
         try:
-            recommend_query = f"""
-                MATCH (:User {{firstName: '{user}'}})-->(g1:Groups)
-                WITH collect(g1) AS groups
-                MATCH (:User {{firstName: '{similar_user}'}})-->(g2:Groups)
-                WHERE NOT g2 IN groups
-                RETURN DISTINCT g2 AS Recommended_Group
-            """
-            # Run the query and convert the result to a DataFrame
-            query_result = self.driver.session().run(recommend_query)
-            recommendation_df = pd.DataFrame([record["Recommended_Group"] for record in query_result],
-                                             columns=["Recommended_Group"])
-
-            # Extract the recommended groups as a set
-            recommendation = set(recommendation_df["Recommended_Group"])
+            recommend_query = f"""MATCH (:User {{firstname: '{user}'}})-->(g1:Groups)                  
+                                  WITH collect(g1) AS groups
+                                  MATCH (:User {{firstname: '{similar_user}'}})-->(g2:Groups)
+                                  WHERE NOT g2 IN groups
+                                  RETURN DISTINCT g2 AS Recommended_Group"""
+            recommendation = set(self.graph.run(recommend_query).to_series(dtype='object'))
             return recommendation
         except Exception as e:
-            logging.error(f"Error in recommender method: {e}")
-            return set()
+            print(f"An error occurred in recommender: {str(e)}")
 
     def get_username(self, email="tobias.steffensen@gmail.com"):
-        """Retrieve the first name of a user based on their email."""
         try:
-            query = f"MATCH (u:User {{email: '{email}'}}) RETURN u.firstName AS firstName"
-            result = self.driver.session().run(query).single()
-            return result['firstName'] if result else None
+            email_to_name_query = f"""MATCH (u:User {{email: '{email}'}}) RETURN u.`firstname`"""
+            name_result = self.graph.run(email_to_name_query)
+            for record in name_result:
+                firstName = record['u.`firstname`']
+            return firstName
         except Exception as e:
-            logging.error(f"Error fetching username: {e}")
-            return None
+            print(f"An error occurred in get_username: {str(e)}")
 
     def get_similarities(self, username, show_result=False):
-        """Retrieve similar users based on similarity scores."""
         try:
             filtered_df = self.result[self.result['person1'] == username]
             if show_result:
-                logging.info(filtered_df)
-            return set(filtered_df['person2'])
+                print(filtered_df)
+            similar = set(filtered_df['person2'])
+            return similar
         except Exception as e:
-            logging.error(f"Error in get_similarities method: {e}")
-            return set()
+            print(f"An error occurred in get_similarities: {str(e)}")
 
     def get_recommendation(self, email):
-        """Generate recommendations for a user based on similar user memberships."""
         try:
             username = self.get_username(email)
-            if not username:
-                logging.warning(f"No user found with email: {email}")
-                return None
-
             similar_users = self.get_similarities(username)
             recommended_groups = set()
             for similar_user in similar_users:
-                recommended_groups.update(self.recommender(username, similar_user))
-
+                recommendation = self.recommender(username, similar_user)
+                recommended_groups.update(recommendation)
             if recommended_groups:
                 return recommended_groups
             else:
-                logging.info(f"No recommendations found for user: {username} with email: {email}")
-                return None
+                print(f"There is no suitable recommendation for user: {username} with email: {email}")
         except Exception as e:
-            logging.error(f"Error in get_recommendation method: {e}")
-            return None
+            print(f"An error occurred in get_recommendation: {str(e)}")
 
     def close_connection(self):
-        """Close connections to Neo4j and GDS."""
         try:
             self.gds.close()
-            self.driver.close()
-            logging.info("Neo4j and GDS connections closed successfully.")
         except Exception as e:
-            logging.error(f"Error closing connections: {e}")
+            print(f"An error occurred while closing connection: {str(e)}")
 
 
 # Usage example
 if __name__ == "__main__":
     uri = "neo4j://65.108.80.255:7687"
-    recommendation_system = Neo4jRecommendationSystem(uri, "neo4j", "famoba2024")
+    username = "neo4j"  # replace with your Neo4j username
+    password = "famoba2024"  # replace with your Neo4j password
+
+    recommendation_system = Neo4jRecommendationSystem(uri, username, password)
     recommendation_system.establish_connection()
     recommendation = recommendation_system.get_recommendation("posttilnicolai@gmail.com")
     print(recommendation)
